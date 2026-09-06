@@ -121,7 +121,7 @@ insert into audit_events (
   'a0000000-0000-4000-8000-000000000001', 'close_run',
   '60000000-0000-4000-8000-000000000001', 'close_run.calculated', 'system',
   '2026-09-01T00:10:01Z',
-  '{"usage_micros":12000000000,"prepaid_micros":10000000000,"accrual_micros":2000000000,"invoice_received":false}'::jsonb,
+  '{"usage_micros":"12000000000","prepaid_micros":"10000000000","accrual_micros":"2000000000","invoice_received":false}'::jsonb,
   null, encode(digest('spendify-demo-close-v1', 'sha256'), 'hex')
 );
 

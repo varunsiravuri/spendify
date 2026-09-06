@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyCreditsToAllocations,
   calculateUsageCost,
   consumePrepaidCredits,
   generateMissingInvoiceAccrual,
@@ -72,6 +73,14 @@ describe("consumePrepaidCredits", () => {
     expect(result.uncoveredMicros).toBe(2_000_000n);
     expect(result.lots.map(({ remainingMicros }) => remainingMicros)).toEqual([0n, 0n]);
     expect(lots.map(({ remainingMicros }) => remainingMicros)).toEqual([7_000_000n, 5_000_000n]);
+    expect(() =>
+      consumePrepaidCredits({
+        amountMicros: 1n,
+        currency: "USD",
+        asOf: "2026-08-31T23:59:59+05:30",
+        lots,
+      }),
+    ).toThrow("Timestamp must be normalized to UTC");
   });
 });
 
@@ -107,6 +116,12 @@ describe("classification and journal generation", () => {
 
     expect(allocations.map(({ accountCode }) => accountCode)).toEqual(["6100", "7200"]);
     expect(allocations.map(({ requiresRdHumanReview }) => requiresRdHumanReview)).toEqual([false, true]);
+    expect(() =>
+      usageEventSchema.parse({
+        ...internalUsage,
+        customerReference: "not-allowed-for-internal-usage",
+      }),
+    ).toThrow("Customer reference must match the usage purpose");
   });
 
   it("creates an exact accrual and next-period reversal", () => {
@@ -176,6 +191,19 @@ describe("seeded demo", () => {
     ]);
     expect(scenario.exceptions.some(({ exceptionType }) => exceptionType === "rd_human_review")).toBe(true);
     expect(scenario.approval.status).toBe("pending");
+
+    const reversedInput = [...scenario.allocations].reverse().map((allocation) => ({
+      usageEvent: allocation.usageEvent,
+      costMicros: allocation.costMicros,
+      accountCode: allocation.accountCode,
+      accountName: allocation.accountName,
+      requiresRdHumanReview: allocation.requiresRdHumanReview,
+    }));
+    const reordered = applyCreditsToAllocations(reversedInput, 10_000_000_000n);
+    expect(reordered.map(({ usageEvent, accruedMicros }) => [usageEvent.id, accruedMicros])).toEqual([
+      ["40000000-0000-4000-8000-000000000001", 0n],
+      ["40000000-0000-4000-8000-000000000002", 2_000_000_000n],
+    ]);
   });
 
   it("formats micros without converting through floating point", () => {

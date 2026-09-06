@@ -1,5 +1,6 @@
 import {
   journalEntrySchema,
+  utcTimestampSchema,
   type JournalEntry,
   type JournalLine,
   type PrepaidCreditLot,
@@ -56,6 +57,7 @@ export function consumePrepaidCredits(input: {
   lots: readonly PrepaidCreditLot[];
 }) {
   if (input.amountMicros < 0n) throw new Error("Amount to consume cannot be negative");
+  const asOf = utcTimestampSchema.parse(input.asOf);
 
   let uncoveredMicros = input.amountMicros;
   const consumptions: CreditConsumption[] = [];
@@ -65,7 +67,7 @@ export function consumePrepaidCredits(input: {
     const unavailable =
       lot.currency !== input.currency ||
       lot.remainingMicros === 0n ||
-      (lot.expiresAt !== null && lot.expiresAt <= input.asOf);
+      (lot.expiresAt !== null && lot.expiresAt <= asOf);
     if (unavailable || uncoveredMicros === 0n) continue;
 
     const consumedMicros =
@@ -106,7 +108,12 @@ export function applyCreditsToAllocations(
 ) {
   if (availableMicros < 0n) throw new Error("Available credits cannot be negative");
   let remainingCredit = availableMicros;
-  return allocations.map((allocation) => {
+  const orderedAllocations = [...allocations].sort(
+    (left, right) =>
+      left.usageEvent.occurredAt.localeCompare(right.usageEvent.occurredAt) ||
+      left.usageEvent.id.localeCompare(right.usageEvent.id),
+  );
+  return orderedAllocations.map((allocation) => {
     const creditedMicros =
       allocation.costMicros < remainingCredit ? allocation.costMicros : remainingCredit;
     remainingCredit -= creditedMicros;

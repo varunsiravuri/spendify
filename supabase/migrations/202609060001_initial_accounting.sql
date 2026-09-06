@@ -184,19 +184,37 @@ create trigger audit_events_no_delete
 before delete on audit_events
 for each row execute function reject_audit_event_mutation();
 
+create trigger audit_events_no_truncate
+before truncate on audit_events
+for each statement execute function reject_audit_event_mutation();
+
 create function assert_journal_entry_balanced()
 returns trigger
 language plpgsql
 as $$
 declare
-  target_entry_id uuid := coalesce(new.journal_entry_id, old.journal_entry_id);
+  target_entry_id uuid;
+  line_count bigint;
   debit_total numeric;
   credit_total numeric;
 begin
-  select coalesce(sum(debit_micros), 0), coalesce(sum(credit_micros), 0)
-    into debit_total, credit_total
-    from journal_lines
+  if tg_table_name = 'journal_entries' then
+    target_entry_id := new.id;
+  else
+    if tg_op = 'UPDATE' and new.journal_entry_id <> old.journal_entry_id then
+      raise exception 'journal lines cannot move between entries';
+    end if;
+    target_entry_id := coalesce(new.journal_entry_id, old.journal_entry_id);
+  end if;
+
+  select count(*), coalesce(sum(debit_micros), 0), coalesce(sum(credit_micros), 0)
+    into line_count, debit_total, credit_total
+    from public.journal_lines
     where journal_entry_id = target_entry_id;
+
+  if line_count < 2 then
+    raise exception 'journal entry % must contain at least two lines', target_entry_id;
+  end if;
 
   if debit_total <> credit_total then
     raise exception 'journal entry % is unbalanced: debits %, credits %',
@@ -211,6 +229,25 @@ after insert or update or delete on journal_lines
 deferrable initially deferred
 for each row execute function assert_journal_entry_balanced();
 
+create constraint trigger journal_entries_must_have_balanced_lines
+after insert or update on journal_entries
+deferrable initially deferred
+for each row execute function assert_journal_entry_balanced();
+
+alter table providers enable row level security;
+alter table rate_cards enable row level security;
+alter table cost_centers enable row level security;
+alter table usage_events enable row level security;
+alter table invoices enable row level security;
+alter table prepaid_credit_lots enable row level security;
+alter table close_runs enable row level security;
+alter table exceptions enable row level security;
+alter table journal_entries enable row level security;
+alter table journal_lines enable row level security;
+alter table journal_line_sources enable row level security;
+alter table approvals enable row level security;
+alter table audit_events enable row level security;
+
 comment on column rate_cards.unit_price_micros is 'Integer currency micros per pricing_unit; application rating uses deterministic round-half-up.';
 comment on table journal_line_sources is 'Normalized source-to-journal lineage with the amount attributed to each usage event.';
-comment on table audit_events is 'Append-only audit log; updates and deletes are rejected by triggers.';
+comment on table audit_events is 'Append-only audit log; updates, deletes, and truncation are rejected by triggers.';

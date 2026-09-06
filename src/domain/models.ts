@@ -27,7 +27,10 @@ export const rateCardSchema = z.object({
   pricingUnit: positiveIntegerSchema,
   effectiveFrom: utcTimestampSchema,
   effectiveTo: utcTimestampSchema.nullable(),
-});
+}).refine(
+  ({ effectiveFrom, effectiveTo }) => effectiveTo === null || effectiveTo > effectiveFrom,
+  { message: "Rate card end must be after its start", path: ["effectiveTo"] },
+);
 
 export const usageEventSchema = z.object({
   id: idSchema,
@@ -40,7 +43,12 @@ export const usageEventSchema = z.object({
   usagePurpose: z.enum(["customer_facing", "internal"]),
   customerReference: z.string().min(1).nullable(),
   ingestedAt: utcTimestampSchema,
-});
+}).refine(
+  ({ usagePurpose, customerReference }) =>
+    (usagePurpose === "customer_facing" && customerReference !== null) ||
+    (usagePurpose === "internal" && customerReference === null),
+  { message: "Customer reference must match the usage purpose", path: ["customerReference"] },
+);
 
 export const invoiceSchema = z.object({
   id: idSchema,
@@ -51,6 +59,9 @@ export const invoiceSchema = z.object({
   currency: currencySchema,
   totalMicros: nonNegativeMoneyMicrosSchema,
   receivedAt: utcTimestampSchema,
+}).refine(({ periodStart, periodEnd }) => periodEnd >= periodStart, {
+  message: "Invoice period end cannot precede its start",
+  path: ["periodEnd"],
 });
 
 export const prepaidCreditLotSchema = z.object({
@@ -61,7 +72,15 @@ export const prepaidCreditLotSchema = z.object({
   remainingMicros: nonNegativeMoneyMicrosSchema,
   purchasedAt: utcTimestampSchema,
   expiresAt: utcTimestampSchema.nullable(),
-});
+})
+  .refine(({ originalMicros, remainingMicros }) => remainingMicros <= originalMicros, {
+    message: "Remaining credit cannot exceed the original lot",
+    path: ["remainingMicros"],
+  })
+  .refine(({ purchasedAt, expiresAt }) => expiresAt === null || expiresAt > purchasedAt, {
+    message: "Credit expiry must be after purchase",
+    path: ["expiresAt"],
+  });
 
 export const costCenterSchema = z.object({
   id: idSchema,
@@ -78,7 +97,15 @@ export const closeRunSchema = z.object({
   status: z.enum(["draft", "in_review", "approved", "posted"]),
   startedAt: utcTimestampSchema,
   completedAt: utcTimestampSchema.nullable(),
-});
+})
+  .refine(({ periodStart, periodEnd }) => periodEnd >= periodStart, {
+    message: "Close period end cannot precede its start",
+    path: ["periodEnd"],
+  })
+  .refine(({ startedAt, completedAt }) => completedAt === null || completedAt >= startedAt, {
+    message: "Close completion cannot precede its start",
+    path: ["completedAt"],
+  });
 
 export const exceptionSchema = z.object({
   id: idSchema,
@@ -129,7 +156,12 @@ export const approvalSchema = z.object({
   reviewerReference: z.string().min(1).nullable(),
   decidedAt: utcTimestampSchema.nullable(),
   createdAt: utcTimestampSchema,
-});
+}).refine(
+  ({ status, reviewerReference, decidedAt }) =>
+    (status === "pending" && reviewerReference === null && decidedAt === null) ||
+    (status !== "pending" && reviewerReference !== null && decidedAt !== null),
+  { message: "Approval decision metadata must match its status" },
+);
 
 export const auditEventSchema = z.object({
   id: idSchema,
