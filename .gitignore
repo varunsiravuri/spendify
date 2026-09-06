@@ -1,18 +1,19 @@
-# Dependencies
-node_modules/
+# dependencies
+/node_modules
 
-# Next.js
-.next/
-out/
+# next.js
+/.next/
+/out/
 
-# Environment and credentials
-.env
-.env.*
+# testing
+/coverage/
+
+# local environment files
+.env*
 !.env.example
 
-# Local tooling
+# deployment and tooling
+.vercel
+*.tsbuildinfo
+next-env.d.ts
 .DS_Store
-*.log
-.vercel/
-coverage/
-
